@@ -1,13 +1,16 @@
 from types import ModuleType
 from typing import Optional
 
-from sqlalchemy import schema, types, pool, Table, URL, Connection
+from sqlalchemy import schema, Table, URL
+from sqlalchemy import types, pool, Connection
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import ReflectedIndex, ReflectedPrimaryKeyConstraint, ReflectedForeignKeyConstraint, \
     ReflectedColumn
 from sqlalchemy.sql import compiler
 
 from sqlalchemy_dremio import exceptions
+
+from sqlalchemy_dremio.types import DremioTypeCompiler
 
 _dialect_name = "dremio+flight"
 
@@ -85,6 +88,10 @@ class DremioDDLCompiler(compiler.DDLCompiler):
             if default is not None:
                 colspec += " DEFAULT " + default
 
+        default = self.get_column_default_string(column)
+        if default is not None:
+            colspec += " DEFAULT " + default
+
         if not column.nullable:
             colspec += " NOT NULL"
         return colspec
@@ -159,6 +166,7 @@ class DremioDialect_flight(default.DefaultDialect):
     ddl_compiler = DremioDDLCompiler
     preparer = DremioIdentifierPreparer
     execution_ctx_cls = DremioExecutionContext
+    type_compiler = DremioTypeCompiler
 
     def create_connect_args(self, url: URL):
         opts = url.translate_connect_args(username='user')

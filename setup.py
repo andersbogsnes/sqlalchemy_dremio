@@ -10,7 +10,8 @@ with open('README.md') as readme_file:
 
 requirements = [
     'sqlalchemy>=1.3.24',
-    'pyarrow>=5.0.0'
+    'pyarrow>=5.0.0',
+    'pandas'
 ]
 
 setup_requirements = [
