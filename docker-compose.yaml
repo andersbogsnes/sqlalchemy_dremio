@@ -1,0 +1,34 @@
+services:
+    minio:
+        image: minio/minio
+        ports:
+            - 9000:9000
+            - 9001:9001
+        environment:
+            - MINIO_ROOT_USER=minio
+            - MINIO_ROOT_PASSWORD=minio1234
+        command:
+            - server
+            - /data
+            - --console-address
+            - ":9001"
+    nessie:
+        image: ghcr.io/projectnessie/nessie:0.92.1
+        ports:
+            - 19120:19120
+        environment:
+            - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_ACCESS_KEY_NAME=minio
+            - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_ACCESS_KEY_SECRET=minio1234
+            - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_ENDPOINT=http://minio:9000
+            - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_REGION=us-east-1
+            - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_PATH_STYLE_ACCESS=true
+            - NESSIE_CATALOG_DEFAULT_WAREHOUSE=warehouse
+            - NESSIE_CATALOG_WAREHOUSES_WAREHOUSE_LOCATION=s3://warehouse
+    dremio:
+        image: dremio/dremio-oss:25.0
+        platform: linux/x86_64
+        ports:
+            - 9047:9047
+            - 32010:32010
+        environment:
+            - DREMIO_JAVA_EXTRA_OPTS=-Ddebug.addDefaultUser=true

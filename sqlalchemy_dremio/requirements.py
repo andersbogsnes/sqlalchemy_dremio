@@ -1,15 +1,23 @@
-from sqlalchemy.testing.requirements import SuiteRequirements
-
 from sqlalchemy.testing import exclusions
+from sqlalchemy.testing.requirements import SuiteRequirements
 
 
 class Requirements(SuiteRequirements):
     @property
+    def binary_literals(self):
+        return exclusions.open()
+
+    @property
+    def binary_comparisons(self):
+        return exclusions.closed()
+
+    @property
     def autoincrement_insert(self):
         return exclusions.closed()
+
     @property
     def array_type(self):
-        return exclusions.open()
+        return exclusions.closed()
 
     @property
     def ctes(self):
@@ -21,8 +29,7 @@ class Requirements(SuiteRequirements):
 
     @property
     def on_update_cascade(self):
-        exclusions.closed()
-
+        return exclusions.closed()
 
     @property
     def self_referential_foreign_keys(self):
@@ -31,7 +38,6 @@ class Requirements(SuiteRequirements):
     @property
     def foreign_key_ddl(self):
         return exclusions.closed()
-
 
     @property
     def named_constraints(self):
@@ -68,3 +74,7 @@ class Requirements(SuiteRequirements):
     @property
     def regexp_replace(self):
         return exclusions.open()
+
+    @property
+    def foreign_keys(self):
+        return exclusions.closed()

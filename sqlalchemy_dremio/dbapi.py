@@ -1,22 +1,14 @@
-import logging
-from typing import Optional, Any, Never, Generator, Union
+from typing import Optional, Any, Never, Generator, Union, Type
 
 from pyarrow import flight
 from pyarrow._flight import FlightClient
-from sqlalchemy import Executable, types
+from sqlalchemy import Executable
 
 from sqlalchemy_dremio.exceptions import Error, NotSupportedError
 from sqlalchemy_dremio.flight_middleware import CookieMiddlewareFactory
 from sqlalchemy_dremio.query import execute
 
-logger = logging.getLogger(__name__)
-
 paramstyle = 'qmark'
-
-
-class Binary(types.LargeBinary):
-    __visit_name__ = "VARBINARY"
-
 
 def connect(c):
     return Connection(c)

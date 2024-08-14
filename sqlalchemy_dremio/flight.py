@@ -1,7 +1,7 @@
 from types import ModuleType
 from typing import Optional
 
-from sqlalchemy import schema, Table, URL
+from sqlalchemy import Table, URL, ForeignKeyConstraint, PrimaryKeyConstraint
 from sqlalchemy import types, pool, Connection
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import ReflectedIndex, ReflectedPrimaryKeyConstraint, ReflectedForeignKeyConstraint, \
@@ -9,8 +9,9 @@ from sqlalchemy.engine.interfaces import ReflectedIndex, ReflectedPrimaryKeyCons
 from sqlalchemy.sql import compiler
 
 from sqlalchemy_dremio import exceptions
-
 from sqlalchemy_dremio.types import DremioTypeCompiler
+
+paramstyle = 'qmark'
 
 _dialect_name = "dremio+flight"
 
@@ -51,8 +52,6 @@ class DremioExecutionContext(default.DefaultExecutionContext):
     pass
 
 
-
-
 class DremioCompiler(compiler.SQLCompiler):
     def visit_char_length_func(self, fn, **kw):
         return f'length{self.function_argspec(fn, **kw)}'
@@ -74,19 +73,20 @@ class DremioCompiler(compiler.SQLCompiler):
 
 
 class DremioDDLCompiler(compiler.DDLCompiler):
-    def get_column_specification(self, column, **kwargs):
+
+    def visit_foreign_key_constraint(
+        self, constraint: ForeignKeyConstraint, **kw
+    ) -> Optional[str]:
+        return None
+
+    def visit_primary_key_constraint(
+        self, constraint: PrimaryKeyConstraint, **kw
+    ) -> Optional[str]:
+        return None
+
+    def get_column_specification(self, column, **kwargs) -> str:
         colspec = self.preparer.format_column(column)
         colspec += " " + self.dialect.type_compiler.process(column.type)
-        if column is column.table._autoincrement_column and (
-            column.default is None or isinstance(column.default, schema.Sequence)
-        ):
-            colspec += " IDENTITY"
-            if isinstance(column.default, schema.Sequence) and column.default.start > 0:
-                colspec += " " + str(column.default.start)
-        else:
-            default = self.get_column_default_string(column)
-            if default is not None:
-                colspec += " DEFAULT " + default
 
         default = self.get_column_default_string(column)
         if default is not None:
@@ -167,19 +167,19 @@ class DremioDialect_flight(default.DefaultDialect):
     preparer = DremioIdentifierPreparer
     execution_ctx_cls = DremioExecutionContext
     type_compiler = DremioTypeCompiler
+    supports_statement_cache = True
 
     def create_connect_args(self, url: URL):
-        opts = url.translate_connect_args(username='user')
         connect_args = {}
-        connectors = [f'HOST={opts["host"]}',
-                      f'PORT={opts["port"]}']
+        connectors = [f'HOST={url.host}',
+                      f'PORT={url.port}']
 
-        if 'user' in opts:
-            connectors.append(f'UID={opts["user"]}')
-            connectors.append(f'PWD={opts['password']}')
+        if url.username:
+            connectors.append(f'UID={url.username}')
+            connectors.append(f'PWD={url.password}')
 
-        if 'database' in opts:
-            connectors.append(f'schema={opts["database"]}')
+        if url.database:
+            connectors.append(f'schema={url.database}')
 
         # Clone the query dictionary with lower-case keys.
         lc_query_dict = {k.lower(): v for k, v in url.query.items()}
@@ -200,27 +200,24 @@ class DremioDialect_flight(default.DefaultDialect):
         return [[";".join(connectors)], connect_args]
 
     @classmethod
-    def dbapi(cls) -> ModuleType:
-        import sqlalchemy_dremio.db as module
+    def import_dbapi(cls) -> ModuleType:
+        import sqlalchemy_dremio.dbapi as module
         return module
 
     def connect(self, *cargs, **cparams) -> Connection:
         return self.loaded_dbapi.connect(*cargs, **cparams)
 
-    def last_inserted_ids(self):
-        return self.context.last_inserted_ids
-
     def get_indexes(self, connection: Connection, table_name: str, schema: Optional[str] = None, **kw) -> list[
         ReflectedIndex]:
-        raise exceptions.NotSupportedError()
+        return []
 
     def get_pk_constraint(self, connection: Connection, table_name: str, schem: Optional[str] = None,
                           **kw) -> ReflectedPrimaryKeyConstraint:
-        raise exceptions.NotSupportedError()
+        return []
 
     def get_foreign_keys(self, connection: Connection, table_name: str, schema: Optional[str] = None, **kw) -> list[
         ReflectedForeignKeyConstraint]:
-        raise exceptions.NotSupportedError()
+        return []
 
     def get_columns(self,
                     connection: Connection,
