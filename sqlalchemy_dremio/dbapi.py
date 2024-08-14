@@ -1,4 +1,5 @@
-from typing import Optional, Any, Never, Generator, Union, Type
+import datetime as dt
+from typing import Optional, Any, Generator, Union
 
 from pyarrow import flight
 from pyarrow._flight import FlightClient
@@ -9,6 +10,7 @@ from sqlalchemy_dremio.flight_middleware import CookieMiddlewareFactory
 from sqlalchemy_dremio.query import execute
 
 paramstyle = 'qmark'
+
 
 def connect(c):
     return Connection(c)
@@ -35,6 +37,18 @@ def check_result(f):
         return f(self, *args, **kwargs)
 
     return d
+
+
+def _convert_param(p: Any) -> str:
+    if isinstance(p, str):
+        return f"'{p}'"
+    if p is None:
+        return "NULL"
+    if isinstance(p, dt.date):
+        return p.strftime("%Y-%m-%d")
+    if isinstance(p, dt.datetime):
+        return p.strftime("%Y-%m-%d %H:%M:%S")
+    return str(p)
 
 
 class Connection:
@@ -84,9 +98,11 @@ class Connection:
             headers.append((b'authorization', f"Bearer {properties["Token"]}".encode('utf-8')))
 
         # Propagate Dremio-specific headers.
-        def add_header(properties: dict, headers: list[tuple[bytes, bytes]], header_name: str) -> None:
+        def add_header(properties: dict, headers: list[tuple[bytes, bytes]],
+                       header_name: str) -> None:
             if header_name in properties:
-                headers.append((header_name.lower().encode('utf-8'), properties[header_name].encode('utf-8')))
+                headers.append(
+                    (header_name.lower().encode('utf-8'), properties[header_name].encode('utf-8')))
 
         add_header(properties, headers, 'schema')
         add_header(properties, headers, 'routing_queue')
@@ -171,20 +187,31 @@ class Cursor:
         self.closed = True
 
     @check_closed
-    def execute(self, query: Union[Executable, str], params: Optional[tuple[Any, ...]] = None) -> "Cursor":
+    def execute(self, query: Union[Executable, str],
+                params: Optional[tuple[Any, ...]] = None) -> "Cursor":
         self.description = None
         if params is not None:
             for param in params:
-                if isinstance(param, str):
-                    param = f"'{param}'"
-                query = query.replace('?', str(param), 1)
+                param = _convert_param(param)
+                query = query.replace('?', param, 1)
         self._results, self.description = execute(query, self.flightclient, self.options)
         return self
 
     @check_closed
-    def executemany(self, query: str) -> Never:
-        raise NotSupportedError(
-            '`executemany` is not supported, use `execute` instead')
+    def executemany(self,
+                    query: Union[Executable, str],
+                    params: Optional[list[tuple[Any, ...]]]) -> "Cursor":
+        self.description = None
+        if params is not None:
+            param_strings = []
+            for param_set in params:
+                param_values = [_convert_param(p) for p in param_set]
+                param_string_values = ", ".join(param_values)
+                param_strings.append(f"({param_string_values})")
+            values_clause = ", ".join(param_strings)
+            query = f"{query[:query.index('(?')]} {values_clause}"
+        self._results, self.description = execute(query, self.flightclient, self.options)
+        return self
 
     @check_result
     @check_closed

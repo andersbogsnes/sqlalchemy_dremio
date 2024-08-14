@@ -1,7 +1,5 @@
+-e .
 pytest
-SQLAlchemy
-pyarrow
 bumpversion
-pandas
-testcontainers[minio]
 httpx
+minio

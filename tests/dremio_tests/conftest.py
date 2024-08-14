@@ -1,58 +1,15 @@
+import os
+import pathlib
 import typing
-from pathlib import Path
 
 import httpx
 import minio
+import pytest
 import sqlalchemy as sa
 from minio import Minio
 from sqlalchemy.dialects import registry
-from sqlalchemy.testing.plugin.pytestplugin import *
-from sqlalchemy.testing.provision import create_db
 
 registry.register("dremio.flight", "sqlalchemy_dremio.flight", "DremioDialect_flight")
-
-@create_db.for_db("dremio")
-def _dremio_create_db(cfg, eng, ident):
-    _create_bucket()
-    _create_db()
-
-
-def _create_bucket() -> None:
-    client = Minio(endpoint="http://localhost:9000",
-                   access_key="minio",
-                   secret_key="minio1234")
-    client.make_bucket("datalake")
-
-def _get_token() -> str:
-    resp = httpx.post(
-        "http://localhost:9047/apiv2/login",
-        json={"userName": "dremio", "password": "dremio123"},
-    )
-    resp.raise_for_status()
-    return resp.json()["token"]
-
-def _create_db():
-    resp = httpx.post(
-        "http://localhost:9047/api/v3/catalog",
-        headers={"Authorization": f"_dremio{_get_token()}"},
-        json={
-            "entityType": "source",
-            "type": "S3",
-            "config": {
-                "name": "test",
-                "accessKey": "minio",
-                "accessSecret": "minio1234",
-                "secure": False,
-                "rootPath": "/datalake",
-                "compatibilityMode": True,
-                "propertyList": [
-                    {"name": "fs.s3a.endpoint", "value": minio["endpoint"]},
-                    {"name": "fs.s3a.path.style.access", "value": "true"},
-                ],
-            },
-        },
-    )
-    resp.raise_for_status()
 
 
 class MinioConfig(typing.TypedDict):
@@ -89,23 +46,23 @@ def datalake_bucket(minio_client: Minio) -> str:
 
 @pytest.fixture(scope="session")
 def dremio_db(minio_credentials: MinioConfig, datalake_bucket: str) -> str:
-    httpx.post(
+    return httpx.post(
         "http://localhost:9047/api/v3/catalog",
         json={
             "entityType": "source",
             "type": "S3",
             "config": {
-                "accessKey": minio["access_key"],
-                "accessSecret": minio["secret_key"],
+                "accessKey": minio_credentials["access_key"],
+                "accessSecret": minio_credentials["secret_key"],
                 "secure": False,
                 "compatibilityMode": True,
                 "propertyList": [
-                    {"name": "fs.s3a.endpoint", "value": minio["endpoint"]},
+                    {"name": "fs.s3a.endpoint", "value": minio_credentials["endpoint"]},
                     {"name": "fs.s3a.path.style.access", "value": "true"},
                 ],
             },
         },
-    )
+    ).json()["id"]
 
 
 @pytest.fixture(scope="session")
@@ -131,7 +88,7 @@ def conn(engine: sa.Engine) -> sa.Connection:
 
 @pytest.fixture()
 def db(request: pytest.FixtureRequest, conn: sa.Connection) -> sa.Connection:
-    test_sql = Path("scripts/sample.sql")
+    test_sql = pathlib.Path(__file__).parent / "scripts/sample.sql"
     sql = test_sql.read_text()
     conn.execute(sa.text(sql))
 

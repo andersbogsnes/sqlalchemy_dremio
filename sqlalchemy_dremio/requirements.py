@@ -4,6 +4,14 @@ from sqlalchemy.testing.requirements import SuiteRequirements
 
 class Requirements(SuiteRequirements):
     @property
+    def foreign_key_constraint_reflection(self):
+        return exclusions.closed()
+
+    @property
+    def temporary_views(self):
+        return exclusions.closed()
+
+    @property
     def binary_literals(self):
         return exclusions.open()
 

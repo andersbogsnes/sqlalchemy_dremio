@@ -2,8 +2,8 @@ services:
     minio:
         image: minio/minio
         ports:
-            - 9000:9000
-            - 9001:9001
+            - "9000:9000"
+            - "9001:9001"
         environment:
             - MINIO_ROOT_USER=minio
             - MINIO_ROOT_PASSWORD=minio1234
@@ -15,7 +15,7 @@ services:
     nessie:
         image: ghcr.io/projectnessie/nessie:0.92.1
         ports:
-            - 19120:19120
+            - "19120:19120"
         environment:
             - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_ACCESS_KEY_NAME=minio
             - NESSIE_CATALOG_SERVICE_S3_DEFAULT_OPTIONS_ACCESS_KEY_SECRET=minio1234
@@ -28,7 +28,7 @@ services:
         image: dremio/dremio-oss:25.0
         platform: linux/x86_64
         ports:
-            - 9047:9047
-            - 32010:32010
+            - "9047:9047"
+            - "32010:32010"
         environment:
             - DREMIO_JAVA_EXTRA_OPTS=-Ddebug.addDefaultUser=true
