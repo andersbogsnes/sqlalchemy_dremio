@@ -7,7 +7,7 @@ from sqlalchemy import Executable
 
 from sqlalchemy_dremio.exceptions import Error, NotSupportedError
 from sqlalchemy_dremio.flight_middleware import CookieMiddlewareFactory
-from sqlalchemy_dremio.query import execute
+from sqlalchemy_dremio import query as dremio_query
 
 paramstyle = 'qmark'
 
@@ -194,7 +194,7 @@ class Cursor:
             for param in params:
                 param = _convert_param(param)
                 query = query.replace('?', param, 1)
-        self._results, self.description = execute(query, self.flightclient, self.options)
+        self._results, self.description = dremio_query.execute(query, self.flightclient, self.options)
         return self
 
     @check_closed
@@ -210,7 +210,7 @@ class Cursor:
                 param_strings.append(f"({param_string_values})")
             values_clause = ", ".join(param_strings)
             query = f"{query[:query.index('(?')]} {values_clause}"
-        self._results, self.description = execute(query, self.flightclient, self.options)
+        self._results, self.description = dremio_query.execute(query, self.flightclient, self.options)
         return self
 
     @check_result

@@ -1,19 +1,16 @@
 from types import ModuleType
-from typing import Optional
+from typing import Optional, Any, List
 
 from sqlalchemy import Table, URL, ForeignKeyConstraint, PrimaryKeyConstraint
 from sqlalchemy import types, pool, Connection
 from sqlalchemy.engine import default, reflection
-from sqlalchemy.engine.interfaces import ReflectedIndex, ReflectedPrimaryKeyConstraint, ReflectedForeignKeyConstraint, \
-    ReflectedColumn
+from sqlalchemy.engine.interfaces import ReflectedIndex, ReflectedPrimaryKeyConstraint, \
+    ReflectedForeignKeyConstraint, \
+    ReflectedColumn, ReflectedCheckConstraint, ConnectArgsType
 from sqlalchemy.sql import compiler
 
-from sqlalchemy_dremio import exceptions
 from sqlalchemy_dremio.types import DremioTypeCompiler
 
-paramstyle = 'qmark'
-
-_dialect_name = "dremio+flight"
 
 _type_map = {
     'boolean': types.BOOLEAN,
@@ -48,10 +45,6 @@ _type_map = {
 }
 
 
-class DremioExecutionContext(default.DefaultExecutionContext):
-    pass
-
-
 class DremioCompiler(compiler.SQLCompiler):
     def visit_char_length_func(self, fn, **kw):
         return f'length{self.function_argspec(fn, **kw)}'
@@ -59,7 +52,8 @@ class DremioCompiler(compiler.SQLCompiler):
     def visit_table(self, table: Table, asfrom: bool = False, **kwargs) -> str:
         if asfrom:
             if table.schema is not None and table.schema != "":
-                fixed_schema = ".".join([f'"{i.replace('"', '')}"' for i in table.schema.split(".")])
+                fixed_schema = ".".join(
+                    [f'"{i.replace('"', '')}"' for i in table.schema.split(".")])
                 fixed_table = f'{fixed_schema}."{table.name.replace('"', "")}"'
             else:
                 fixed_table = f'"{table.name.replace('"', "")}"'
@@ -100,48 +94,89 @@ class DremioDDLCompiler(compiler.DDLCompiler):
 class DremioIdentifierPreparer(compiler.IdentifierPreparer):
     reserved_words = compiler.RESERVED_WORDS.copy()
     dremio_reserved = {'abs', 'all', 'allocate', 'allow', 'alter', 'and', 'any', 'are', 'array',
-                       'array_max_cardinality', 'as', 'asensitivelo', 'asymmetric', 'at', 'atomic', 'authorization',
-                       'avg', 'begin', 'begin_frame', 'begin_partition', 'between', 'bigint', 'binary', 'bit', 'blob',
-                       'boolean', 'both', 'by', 'call', 'called', 'cardinality', 'cascaded', 'case', 'cast', 'ceil',
-                       'ceiling', 'char', 'char_length', 'character', 'character_length', 'check', 'classifier',
-                       'clob', 'close', 'coalesce', 'collate', 'collect', 'column', 'commit', 'condition', 'connect',
-                       'constraint', 'contains', 'convert', 'corr', 'corresponding', 'count', 'covar_pop',
-                       'covar_samp', 'create', 'cross', 'cube', 'cume_dist', 'current', 'current_catalog',
-                       'current_date', 'current_default_transform_group', 'current_path', 'current_role',
+                       'array_max_cardinality', 'as', 'asensitivelo', 'asymmetric', 'at', 'atomic',
+                       'authorization',
+                       'avg', 'begin', 'begin_frame', 'begin_partition', 'between', 'bigint',
+                       'binary', 'bit', 'blob',
+                       'boolean', 'both', 'by', 'call', 'called', 'cardinality', 'cascaded', 'case',
+                       'cast', 'ceil',
+                       'ceiling', 'char', 'char_length', 'character', 'character_length', 'check',
+                       'classifier',
+                       'clob', 'close', 'coalesce', 'collate', 'collect', 'column', 'commit',
+                       'condition', 'connect',
+                       'constraint', 'contains', 'convert', 'corr', 'corresponding', 'count',
+                       'covar_pop',
+                       'covar_samp', 'create', 'cross', 'cube', 'cume_dist', 'current',
+                       'current_catalog',
+                       'current_date', 'current_default_transform_group', 'current_path',
+                       'current_role',
                        'current_row', 'current_schema', 'current_time', 'current_timestamp',
-                       'current_transform_group_for_type', 'current_user', 'cursor', 'cycle', 'date', 'day',
-                       'deallocate', 'dec', 'decimal', 'declare', 'default', 'define', 'delete', 'dense_rank',
-                       'deref', 'describe', 'deterministic', 'disallow', 'disconnect', 'distinct', 'double', 'drop',
-                       'dynamic', 'each', 'element', 'else', 'empty', 'end', 'end-exec', 'end_frame', 'end_partition',
-                       'equals', 'escape', 'every', 'except', 'exec', 'execute', 'exists', 'exp', 'explain', 'extend',
-                       'external', 'extract', 'false', 'fetch', 'filter', 'first_value', 'float', 'floor', 'for',
-                       'foreign', 'frame_row', 'free', 'from', 'full', 'function', 'fusion', 'get', 'global', 'grant',
-                       'group', 'grouping', 'groups', 'having', 'hold', 'hour', 'identity', 'import', 'in',
-                       'indicator', 'initial', 'inner', 'inout', 'insensitive', 'insert', 'int', 'integer',
-                       'intersect', 'intersection', 'interval', 'into', 'is', 'join', 'lag', 'language', 'large',
-                       'last_value', 'lateral', 'lead', 'leading', 'left', 'like', 'like_regex', 'limit', 'ln',
-                       'local', 'localtime', 'localtimestamp', 'lower', 'match', 'matches', 'match_number',
-                       'match_recognize', 'max', 'measures', 'member', 'merge', 'method', 'min', 'minute', 'mod',
-                       'modifies', 'module', 'month', 'more', 'multiset', 'national', 'natural', 'nchar', 'nclob',
-                       'new', 'next', 'no', 'none', 'normalize', 'not', 'nth_value', 'ntile', 'null', 'nullif',
-                       'numeric', 'occurrences_regex', 'octet_length', 'of', 'offset', 'old', 'omit', 'on', 'one',
-                       'only', 'open', 'or', 'order', 'out', 'outer', 'over', 'overlaps', 'overlay', 'parameter',
-                       'partition', 'pattern', 'per', 'percent', 'percentile_cont', 'percentile_disc', 'percent_rank',
-                       'period', 'permute', 'portion', 'position', 'position_regex', 'power', 'precedes', 'precision',
-                       'prepare', 'prev', 'primary', 'procedure', 'range', 'rank', 'reads', 'real', 'recursive',
-                       'ref', 'references', 'referencing', 'regr_avgx', 'regr_avgy', 'regr_count', 'regr_intercept',
-                       'regr_r2', 'regr_slope', 'regr_sxx', 'regr_sxy', 'regr_syy', 'release', 'reset', 'result',
-                       'return', 'returns', 'revoke', 'right', 'rollback', 'rollup', 'row', 'row_number', 'rows',
-                       'running', 'savepoint', 'scope', 'scroll', 'search', 'second', 'seek', 'select', 'sensitive',
-                       'session_user', 'set', 'minus', 'show', 'similar', 'skip', 'smallint', 'some', 'specific',
-                       'specifictype', 'sql', 'sqlexception', 'sqlstate', 'sqlwarning', 'sqrt', 'start', 'static',
-                       'stddev_pop', 'stddev_samp', 'stream', 'submultiset', 'subset', 'substring', 'substring_regex',
-                       'succeeds', 'sum', 'symmetric', 'system', 'system_time', 'system_user', 'table', 'tablesample',
-                       'then', 'time', 'timestamp', 'timezone_hour', 'timezone_minute', 'tinyint', 'to', 'trailing',
-                       'translate', 'translate_regex', 'translation', 'treat', 'trigger', 'trim', 'trim_array',
-                       'true', 'truncate', 'uescape', 'union', 'unique', 'unknown', 'unnest', 'update', 'upper',
-                       'upsert', 'user', 'using', 'value', 'values', 'value_of', 'var_pop', 'var_samp', 'varbinary',
-                       'varchar', 'varying', 'versioning', 'when', 'whenever', 'where', 'width_bucket', 'window',
+                       'current_transform_group_for_type', 'current_user', 'cursor', 'cycle',
+                       'date', 'day',
+                       'deallocate', 'dec', 'decimal', 'declare', 'default', 'define', 'delete',
+                       'dense_rank',
+                       'deref', 'describe', 'deterministic', 'disallow', 'disconnect', 'distinct',
+                       'double', 'drop',
+                       'dynamic', 'each', 'element', 'else', 'empty', 'end', 'end-exec',
+                       'end_frame', 'end_partition',
+                       'equals', 'escape', 'every', 'except', 'exec', 'execute', 'exists', 'exp',
+                       'explain', 'extend',
+                       'external', 'extract', 'false', 'fetch', 'filter', 'first_value', 'float',
+                       'floor', 'for',
+                       'foreign', 'frame_row', 'free', 'from', 'full', 'function', 'fusion', 'get',
+                       'global', 'grant',
+                       'group', 'grouping', 'groups', 'having', 'hold', 'hour', 'identity',
+                       'import', 'in',
+                       'indicator', 'initial', 'inner', 'inout', 'insensitive', 'insert', 'int',
+                       'integer',
+                       'intersect', 'intersection', 'interval', 'into', 'is', 'join', 'lag',
+                       'language', 'large',
+                       'last_value', 'lateral', 'lead', 'leading', 'left', 'like', 'like_regex',
+                       'limit', 'ln',
+                       'local', 'localtime', 'localtimestamp', 'lower', 'match', 'matches',
+                       'match_number',
+                       'match_recognize', 'max', 'measures', 'member', 'merge', 'method', 'min',
+                       'minute', 'mod',
+                       'modifies', 'module', 'month', 'more', 'multiset', 'national', 'natural',
+                       'nchar', 'nclob',
+                       'new', 'next', 'no', 'none', 'normalize', 'not', 'nth_value', 'ntile',
+                       'null', 'nullif',
+                       'numeric', 'occurrences_regex', 'octet_length', 'of', 'offset', 'old',
+                       'omit', 'on', 'one',
+                       'only', 'open', 'or', 'order', 'out', 'outer', 'over', 'overlaps', 'overlay',
+                       'parameter',
+                       'partition', 'pattern', 'per', 'percent', 'percentile_cont',
+                       'percentile_disc', 'percent_rank',
+                       'period', 'permute', 'portion', 'position', 'position_regex', 'power',
+                       'precedes', 'precision',
+                       'prepare', 'prev', 'primary', 'procedure', 'range', 'rank', 'reads', 'real',
+                       'recursive',
+                       'ref', 'references', 'referencing', 'regr_avgx', 'regr_avgy', 'regr_count',
+                       'regr_intercept',
+                       'regr_r2', 'regr_slope', 'regr_sxx', 'regr_sxy', 'regr_syy', 'release',
+                       'reset', 'result',
+                       'return', 'returns', 'revoke', 'right', 'rollback', 'rollup', 'row',
+                       'row_number', 'rows',
+                       'running', 'savepoint', 'scope', 'scroll', 'search', 'second', 'seek',
+                       'select', 'sensitive',
+                       'session_user', 'set', 'minus', 'show', 'similar', 'skip', 'smallint',
+                       'some', 'specific',
+                       'specifictype', 'sql', 'sqlexception', 'sqlstate', 'sqlwarning', 'sqrt',
+                       'start', 'static',
+                       'stddev_pop', 'stddev_samp', 'stream', 'submultiset', 'subset', 'substring',
+                       'substring_regex',
+                       'succeeds', 'sum', 'symmetric', 'system', 'system_time', 'system_user',
+                       'table', 'tablesample',
+                       'then', 'time', 'timestamp', 'timezone_hour', 'timezone_minute', 'tinyint',
+                       'to', 'trailing',
+                       'translate', 'translate_regex', 'translation', 'treat', 'trigger', 'trim',
+                       'trim_array',
+                       'true', 'truncate', 'uescape', 'union', 'unique', 'unknown', 'unnest',
+                       'update', 'upper',
+                       'upsert', 'user', 'using', 'value', 'values', 'value_of', 'var_pop',
+                       'var_samp', 'varbinary',
+                       'varchar', 'varying', 'versioning', 'when', 'whenever', 'where',
+                       'width_bucket', 'window',
                        'with', 'within', 'without', 'year'}
 
     dremio_unique = dremio_reserved - reserved_words
@@ -151,25 +186,32 @@ class DremioIdentifierPreparer(compiler.IdentifierPreparer):
         super().__init__(dialect, initial_quote='"', final_quote='"')
 
 
-class DremioExecutionContext_flight(DremioExecutionContext):
-    pass
-
 
 class DremioDialect_flight(default.DefaultDialect):
-    name = _dialect_name
-    driver = _dialect_name
-    supports_sane_rowcount = False
-    supports_sane_multi_rowcount = False
-    poolclass = pool.SingletonThreadPool
-    statement_compiler = DremioCompiler
-    paramstyle = 'pyformat'
+    name = "dremio"
+    driver = "dremio+flight"
+
     ddl_compiler = DremioDDLCompiler
+    type_compiler_cls = DremioTypeCompiler
+
     preparer = DremioIdentifierPreparer
-    execution_ctx_cls = DremioExecutionContext
-    type_compiler = DremioTypeCompiler
+    statement_compiler = DremioCompiler
+
+    poolclass = pool.SingletonThreadPool
+
+    paramstyle = 'qmark'
+
+
+    use_insertmanyvalues = True
+    use_insertmanyvalues_wo_returning = True
+
+    supports_empty_insert = False
+    supports_multivalues_insert = True
+    supports_native_boolean = True
+    supports_native_decimal = True
     supports_statement_cache = True
 
-    def create_connect_args(self, url: URL):
+    def create_connect_args(self, url: URL) -> ConnectArgsType:
         connect_args = {}
         connectors = [f'HOST={url.host}',
                       f'PORT={url.port}']
@@ -197,25 +239,41 @@ class DremioDialect_flight(default.DefaultDialect):
         add_property(lc_query_dict, 'routing_engine', connectors)
         add_property(lc_query_dict, 'Token', connectors)
 
-        return [[";".join(connectors)], connect_args]
+        return [";".join(connectors)], connect_args
 
     @classmethod
     def import_dbapi(cls) -> ModuleType:
         import sqlalchemy_dremio.dbapi as module
         return module
 
-    def connect(self, *cargs, **cparams) -> Connection:
-        return self.loaded_dbapi.connect(*cargs, **cparams)
-
-    def get_indexes(self, connection: Connection, table_name: str, schema: Optional[str] = None, **kw) -> list[
-        ReflectedIndex]:
+    def get_check_constraints(
+        self,
+        connection: Connection,
+        table_name: str,
+        schema: Optional[str] = None,
+        **kw: Any,
+    ) -> List[ReflectedCheckConstraint]:
         return []
 
-    def get_pk_constraint(self, connection: Connection, table_name: str, schem: Optional[str] = None,
+    def get_indexes(self,
+                    connection: Connection,
+                    table_name: str,
+                    schema: Optional[str] = None,
+                    **kw) -> list[ReflectedIndex]:
+        return []
+
+    def get_pk_constraint(self,
+                          connection: Connection,
+                          table_name: str,
+                          schem: Optional[str] = None,
                           **kw) -> ReflectedPrimaryKeyConstraint:
-        return []
+        return {}
 
-    def get_foreign_keys(self, connection: Connection, table_name: str, schema: Optional[str] = None, **kw) -> list[
+    def get_foreign_keys(self,
+                         connection: Connection,
+                         table_name: str,
+                         schema: Optional[str] = None,
+                         **kw) -> list[
         ReflectedForeignKeyConstraint]:
         return []
 
@@ -225,7 +283,7 @@ class DremioDialect_flight(default.DefaultDialect):
                     schema: Optional[str] = None,
                     **kw) -> list[ReflectedColumn]:
         sql = f'DESCRIBE "{table_name}"'
-        if schema is not None and schema != "":
+        if schema:
             sql = f'DESCRIBE "{schema}"."{table_name}"'
         cursor = connection.exec_driver_sql(sql)
         result = [ReflectedColumn(name=col[0],
@@ -237,29 +295,61 @@ class DremioDialect_flight(default.DefaultDialect):
         return result
 
     @reflection.cache
-    def get_table_names(self, connection: Connection, schema: Optional[str] = None, **kw) -> list[str]:
+    def get_table_names(self, connection: Connection, schema: Optional[str] = None, **kw) -> list[
+        str]:
         sql = 'SELECT TABLE_NAME FROM INFORMATION_SCHEMA."TABLES"'
         if schema is not None:
-            sql = f'SELECT TABLE_NAME FROM INFORMATION_SCHEMA."TABLES" WHERE TABLE_SCHEMA = "{schema}"'
+            sql = f"""SELECT TABLE_NAME FROM INFORMATION_SCHEMA."TABLES"
+            WHERE TABLE_SCHEMA = '{schema}'"""
 
         result = connection.exec_driver_sql(sql)
         table_names = [r[0] for r in result]
         return table_names
 
-    def get_schema_names(self, connection: Connection, schema: Optional[str] = None, **kw) -> list[str]:
+    def get_schema_names(self,
+                         connection: Connection,
+                         schema: Optional[str] = None, **kw) -> list[
+        str]:
         result = connection.exec_driver_sql("SHOW SCHEMAS")
         schema_names = [r[0] for r in result]
         return schema_names
 
     @reflection.cache
-    def has_table(self, connection: Connection, table_name: str, schema: Optional[str] = None, **kw) -> bool:
-        sql = 'SELECT COUNT(*) FROM INFORMATION_SCHEMA."TABLES"'
+    def has_table(self, connection: Connection, table_name: str, schema: Optional[str] = None,
+                  **kw) -> bool:
+        sql = 'SELECT COUNT(*) FROM INFORMATION_SCHEMA."COLUMNS"'
         sql += f" WHERE TABLE_NAME = '{table_name}'"
-        if schema is not None and schema != "":
+        if schema:
             sql += f" AND TABLE_SCHEMA = '{schema}'"
-        result = connection.exec_driver_sql(sql)
-        count_rows = [r[0] for r in result]
-        return count_rows[0] > 0
+        result = connection.exec_driver_sql(sql).scalar_one()
+        return result > 0
 
-    def get_view_names(self, connection: Connection, schema: Optional[str] = None, **kwargs) -> list[str]:
-        raise exceptions.NotSupportedError()
+    @reflection.cache
+    def has_schema(
+        self, connection: Connection, schema_name: str, **kw: Any
+    ) -> bool:
+        sql = f"""SELECT COUNT(*) FROM INFORMATION_SCHEMA."SCHEMATA"
+        WHERE SCHEMA_NAME = '{schema_name}'"""
+        result = connection.exec_driver_sql(sql).scalar_one()
+        return result > 0
+
+    def get_view_names(self, connection: Connection, schema: Optional[str] = None, **kwargs) -> \
+        list[str]:
+        sql = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.VIEWS"
+        if schema:
+            sql += f" WHERE TABLE_SCHEMA = '{schema}'"
+        result = connection.exec_driver_sql(sql).scalars()
+        return list(result)
+
+    def get_view_definition(
+        self,
+        connection: Connection,
+        view_name: str,
+        schema: Optional[str] = None,
+        **kw: Any,
+    ) -> str:
+        sql = "SELECT VIEW_DEFINITION FROM INFORMATION_SCHEMA.VIEWS where TABLE_NAME = '{view_name}'"
+        if schema:
+            sql += f" AND TABLE_SCHEMA = '{schema}'"
+        result = connection.exec_driver_sql(sql).scalar_one()
+        return result
